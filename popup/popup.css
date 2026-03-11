@@ -1,0 +1,318 @@
+/* ═══════════════════════════════════════════════════════════
+   Study Lock — Popup Styles
+   Premium dark-mode UI with glassmorphism.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+    --void-black: #050505;
+    --obsidian-surface: rgba(15, 15, 18, 0.85);
+    --electric-cobalt: #3B82F6;
+    --neon-mint: #10B981;
+    --laser-crimson: #EF4444;
+    --starlight-white: #F9FAFB;
+    --muted-steel: #9CA3AF;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 320px;
+    min-height: 200px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--void-black);
+    color: var(--starlight-white);
+    overflow: hidden;
+}
+
+/* ──────────────── Container ──────────────── */
+
+.popup-container {
+    padding: 24px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* ──────────────── Header ──────────────── */
+
+.popup-header {
+    text-align: center;
+}
+
+.popup-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.popup-logo-icon {
+    font-size: 24px;
+}
+
+.popup-title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-shadow: 0 0 16px rgba(255, 255, 255, 0.2);
+    color: var(--starlight-white);
+}
+
+.popup-tagline {
+    font-size: 11px;
+    color: var(--muted-steel);
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+/* ──────────────── Setup Section ──────────────── */
+
+.popup-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── Presets ── */
+
+.popup-presets {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.popup-preset {
+    padding: 10px 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted-steel);
+    background: var(--obsidian-surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    /* 8px per aesthetic definition */
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    text-align: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.popup-preset:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: var(--starlight-white);
+    transform: scale(1.02);
+}
+
+.popup-preset--active {
+    background: rgba(59, 130, 246, 0.15);
+    /* Electric Cobalt tint */
+    border-color: var(--electric-cobalt);
+    color: var(--electric-cobalt);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ── Custom Input ── */
+
+.popup-custom {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.popup-custom-label {
+    font-size: 11px;
+    color: var(--muted-steel);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.popup-custom-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--obsidian-surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0 14px;
+    transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.popup-custom-input-row:focus-within {
+    border-color: var(--electric-cobalt);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.popup-custom-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--starlight-white);
+    font-size: 16px;
+    font-weight: 600;
+    padding: 10px 0;
+    font-family: 'JetBrains Mono', 'Space Grotesk', 'Cascadia Code', monospace;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.popup-custom-input::-webkit-outer-spin-button,
+.popup-custom-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.popup-custom-input::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+}
+
+.popup-custom-unit {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.35);
+    font-weight: 500;
+}
+
+/* ── Start Button ── */
+
+.popup-start-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--muted-steel);
+    background: var(--obsidian-surface);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    cursor: not-allowed;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-family: inherit;
+}
+
+.popup-start-btn--ready {
+    cursor: pointer;
+    color: var(--starlight-white);
+    background: rgba(59, 130, 246, 0.1);
+    border-color: var(--electric-cobalt);
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.4), inset 0 0 12px rgba(59, 130, 246, 0.2);
+}
+
+.popup-start-btn--ready:hover {
+    transform: scale(1.02);
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.6), inset 0 0 16px rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.popup-start-btn--ready:active {
+    transform: scale(0.98);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+.popup-start-btn:disabled {
+    cursor: not-allowed;
+}
+
+.popup-start-btn-icon {
+    font-size: 16px;
+}
+
+/* ── Warning ── */
+
+.popup-warning {
+    font-size: 11px;
+    color: var(--laser-crimson);
+    opacity: 0.8;
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* ──────────────── Status Section ──────────────── */
+
+.popup-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 20px 0;
+}
+
+.popup-status-badge {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--neon-mint);
+    background: rgba(16, 185, 129, 0.1);
+    padding: 5px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+    animation: popup-status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes popup-status-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+    }
+
+    50% {
+        opacity: 0.8;
+        box-shadow: 0 0 24px rgba(16, 185, 129, 0.4);
+    }
+}
+
+.popup-status-time {
+    font-size: 48px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    font-family: 'JetBrains Mono', 'Space Grotesk', 'Cascadia Code', monospace;
+    color: var(--starlight-white);
+    text-shadow: 0 0 24px rgba(59, 130, 246, 0.5);
+    letter-spacing: 3px;
+}
+
+.popup-status-label {
+    font-size: 11px;
+    color: var(--muted-steel);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-weight: 600;
+}
+
+/* ──────────────── Error Section ──────────────── */
+
+.popup-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 0;
+}
+
+.popup-error-icon {
+    font-size: 40px;
+    opacity: 0.7;
+}
+
+.popup-error-text {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    line-height: 1.6;
+    max-width: 240px;
+}

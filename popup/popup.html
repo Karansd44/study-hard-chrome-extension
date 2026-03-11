@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Lock</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <div class="popup-header">
+      <div class="popup-logo">
+        <span class="popup-logo-icon">🔒</span>
+        <h1 class="popup-title">Study Lock</h1>
+      </div>
+      <p class="popup-tagline">Focus mode for YouTube</p>
+    </div>
+
+    <!-- Session Status (shown when session is active) -->
+    <div class="popup-status" id="popup-status" style="display: none;">
+      <div class="popup-status-badge">SESSION ACTIVE</div>
+      <div class="popup-status-time" id="popup-status-time">--:--</div>
+      <p class="popup-status-label">remaining</p>
+    </div>
+
+    <!-- Error State -->
+    <div class="popup-error" id="popup-error" style="display: none;">
+      <div class="popup-error-icon">📺</div>
+      <p class="popup-error-text" id="popup-error-text">Navigate to a YouTube video to start a session.</p>
+    </div>
+
+    <!-- Timer Setup (shown when on a YouTube video & no session active) -->
+    <div class="popup-setup" id="popup-setup" style="display: none;">
+      <!-- Quick Presets -->
+      <div class="popup-presets">
+        <button class="popup-preset" data-minutes="15">15 min</button>
+        <button class="popup-preset" data-minutes="30">30 min</button>
+        <button class="popup-preset" data-minutes="45">45 min</button>
+        <button class="popup-preset" data-minutes="60">60 min</button>
+      </div>
+
+      <!-- Custom Input -->
+      <div class="popup-custom">
+        <label class="popup-custom-label" for="custom-minutes">Custom duration</label>
+        <div class="popup-custom-input-row">
+          <input type="number" id="custom-minutes" class="popup-custom-input" min="5" max="120" placeholder="25">
+          <span class="popup-custom-unit">min</span>
+        </div>
+      </div>
+
+      <!-- Start Button -->
+      <button class="popup-start-btn" id="start-btn" disabled>
+        <span class="popup-start-btn-icon">🚀</span>
+        <span class="popup-start-btn-text">START SESSION</span>
+      </button>
+
+      <!-- Warning -->
+      <p class="popup-warning">
+        ⚠️ You won't be able to exit until the timer expires.
+      </p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
