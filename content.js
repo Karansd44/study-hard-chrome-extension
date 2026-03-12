@@ -74,8 +74,16 @@
     // Timer Overlay
     // ─────────────────────────────────────────────────────────
 
+    // Track document-level drag listeners so we can remove them on cleanup
+    let dragMoveHandler = null;
+    let dragUpHandler = null;
+
     function createTimerOverlay(duration, startTimestamp) {
         removeElement(OVERLAY_ID);
+        // Remove any stale drag listeners from a previous overlay
+        if (dragMoveHandler) document.removeEventListener('mousemove', dragMoveHandler);
+        if (dragUpHandler) document.removeEventListener('mouseup', dragUpHandler);
+
         const container = getOrCreateContainer();
 
         const overlay = document.createElement('div');
@@ -125,20 +133,23 @@
             e.preventDefault(); // Prevent text selection while dragging
         });
 
-        document.addEventListener('mousemove', (e) => {
+        dragMoveHandler = (e) => {
             if (!isDragging) return;
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
             overlay.style.left = `${initialLeft + dx}px`;
             overlay.style.top = `${initialTop + dy}px`;
-        });
+        };
 
-        document.addEventListener('mouseup', () => {
+        dragUpHandler = () => {
             if (isDragging) {
                 isDragging = false;
                 overlay.style.cursor = 'grab';
             }
-        });
+        };
+
+        document.addEventListener('mousemove', dragMoveHandler);
+        document.addEventListener('mouseup', dragUpHandler);
 
         // Animate in
         requestAnimationFrame(() => {
@@ -189,6 +200,15 @@
             timerInterval = null;
         }
         removeElement(OVERLAY_ID);
+        // Clean up document-level drag listeners to prevent memory leaks
+        if (dragMoveHandler) {
+            document.removeEventListener('mousemove', dragMoveHandler);
+            dragMoveHandler = null;
+        }
+        if (dragUpHandler) {
+            document.removeEventListener('mouseup', dragUpHandler);
+            dragUpHandler = null;
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -301,13 +321,25 @@
         toast.id = TOAST_ID;
         toast.className = 'study-lock-toast';
 
-        toast.innerHTML = `
-            <div class="study-lock-toast-icon">✨</div>
-            <div class="study-lock-toast-text">
-                <p class="study-lock-toast-title">Session Complete</p>
-                <p class="study-lock-toast-subtitle">${minutes} minute${minutes !== 1 ? 's' : ''} of focus. Great job!</p>
-            </div>
-        `;
+        const toastIcon = document.createElement('div');
+        toastIcon.className = 'study-lock-toast-icon';
+        toastIcon.textContent = '✨';
+
+        const toastText = document.createElement('div');
+        toastText.className = 'study-lock-toast-text';
+
+        const toastTitle = document.createElement('p');
+        toastTitle.className = 'study-lock-toast-title';
+        toastTitle.textContent = 'Session Complete';
+
+        const toastSubtitle = document.createElement('p');
+        toastSubtitle.className = 'study-lock-toast-subtitle';
+        toastSubtitle.textContent = `${minutes} minute${minutes !== 1 ? 's' : ''} of focus. Great job!`;
+
+        toastText.appendChild(toastTitle);
+        toastText.appendChild(toastSubtitle);
+        toast.appendChild(toastIcon);
+        toast.appendChild(toastText);
 
         container.appendChild(toast);
 
@@ -371,12 +403,8 @@
         // Request fullscreen via background (window-level, no user gesture needed)
         requestFullscreenViaBackground();
 
-
-
         // Hide distracting YouTube elements
         document.body.classList.add('study-lock-active');
-
-
     }
 
     function cleanup() {

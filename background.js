@@ -45,6 +45,10 @@ async function setSession(session) {
 // ─────────────────────────────────────────────────────────
 
 async function startSession({ tabId, windowId, duration, url }) {
+    // Guard against double-start (e.g., race from rapid popup clicks)
+    const current = await getSession();
+    if (current.session_state === StudyLockStates.LOCKED) return;
+
     const session = createSessionData({ tabId, windowId, duration, url });
     await setSession(session);
 
@@ -117,10 +121,9 @@ async function endSession(reason = StudyLockStates.COMPLETED) {
 
     console.log(`Study Lock: Session ended — ${newState}`);
 
-    // Auto-reset to IDLE after a brief delay
-    setTimeout(async () => {
-        await setSession(createIdleSession());
-    }, 500);
+    // Reset to IDLE immediately — setTimeout is unreliable in MV3 service workers
+    // (Chrome can terminate the worker before the callback fires)
+    await setSession(createIdleSession());
 }
 
 // ─────────────────────────────────────────────────────────
