@@ -170,36 +170,7 @@
     }
 }
 
-/* ──────────────── Digital Shutters ──────────────── */
 
-.study-lock-shutter {
-    position: fixed;
-    left: 0;
-    width: 100vw;
-    height: 12vh;
-    background: var(--sl-void-black);
-    z-index: 2147483645;
-    /* Below timer */
-    pointer-events: none;
-    transform: scaleY(0);
-    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.study-lock-shutter-top {
-    top: 0;
-    transform-origin: top;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.study-lock-shutter-bottom {
-    bottom: 0;
-    transform-origin: bottom;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.study-lock-shutters-active .study-lock-shutter {
-    transform: scaleY(1);
-}
 
 /* ──────────────── Freedom Release ──────────────── */
 

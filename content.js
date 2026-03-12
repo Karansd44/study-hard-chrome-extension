@@ -371,27 +371,12 @@
         // Request fullscreen via background (window-level, no user gesture needed)
         requestFullscreenViaBackground();
 
-        // Inject Digital Shutters if they don't exist
-        const container = getOrCreateContainer();
-        if (!document.getElementById('study-lock-shutter-top')) {
-            const top = document.createElement('div');
-            top.id = 'study-lock-shutter-top';
-            top.className = 'study-lock-shutter study-lock-shutter-top';
-            container.appendChild(top);
 
-            const bottom = document.createElement('div');
-            bottom.id = 'study-lock-shutter-bottom';
-            bottom.className = 'study-lock-shutter study-lock-shutter-bottom';
-            container.appendChild(bottom);
-        }
 
         // Hide distracting YouTube elements
         document.body.classList.add('study-lock-active');
 
-        // Trigger shutter animation on next frame
-        requestAnimationFrame(() => {
-            document.body.classList.add('study-lock-shutters-active');
-        });
+
     }
 
     function cleanup() {
@@ -437,8 +422,6 @@
                 flashEl.className = 'study-lock-freedom-flash';
                 getOrCreateContainer().appendChild(flashEl);
 
-                document.body.classList.remove('study-lock-shutters-active');
-
                 // Delay cleanup to allow animations to run
                 setTimeout(() => {
                     cleanup();
@@ -451,7 +434,6 @@
             }
 
             case 'SESSION_INTERRUPTED': {
-                document.body.classList.remove('study-lock-shutters-active');
                 cleanup();
                 sendResponse({ success: true });
                 break;
