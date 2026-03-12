@@ -15,11 +15,11 @@ importScripts('utils/state-machine.js');
 // ─────────────────────────────────────────────────────────
 let cachedSession = null;
 
-chrome.storage.session.get(SESSION_STORAGE_KEY).then(data => {
+chrome.storage.local.get(SESSION_STORAGE_KEY).then(data => {
     cachedSession = data[SESSION_STORAGE_KEY] || createIdleSession();
 });
 
-chrome.storage.session.onChanged.addListener((changes) => {
+chrome.storage.local.onChanged.addListener((changes) => {
     if (changes[SESSION_STORAGE_KEY]) {
         cachedSession = changes[SESSION_STORAGE_KEY].newValue || createIdleSession();
     }
@@ -30,14 +30,14 @@ chrome.storage.session.onChanged.addListener((changes) => {
 // ─────────────────────────────────────────────────────────
 async function getSession() {
     if (cachedSession) return cachedSession;
-    const data = await chrome.storage.session.get(SESSION_STORAGE_KEY);
+    const data = await chrome.storage.local.get(SESSION_STORAGE_KEY);
     cachedSession = data[SESSION_STORAGE_KEY] || createIdleSession();
     return cachedSession;
 }
 
 async function setSession(session) {
     cachedSession = session;
-    await chrome.storage.session.set({ [SESSION_STORAGE_KEY]: session });
+    await chrome.storage.local.set({ [SESSION_STORAGE_KEY]: session });
 }
 
 // ─────────────────────────────────────────────────────────
@@ -134,6 +134,8 @@ async function endSession(reason = StudyLockStates.COMPLETED) {
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     // 1. Synchronous Fast-Path (Zero-latency tab block)
     if (cachedSession && cachedSession.session_state === StudyLockStates.LOCKED) {
+        // Skip enforcement if locked tab is gone (e.g., browser restarted, awaiting reconnect)
+        if (!cachedSession.locked_tab_id) return;
         if (activeInfo.tabId !== cachedSession.locked_tab_id) {
             chrome.tabs.update(cachedSession.locked_tab_id, { active: true }).catch(() => { });
             if (cachedSession.locked_window_id) {
@@ -150,6 +152,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     // 2. Async Slow-Path (if service worker just woke up)
     const session = await getSession();
     if (session.session_state !== StudyLockStates.LOCKED) return;
+    if (!session.locked_tab_id) return; // Tab not yet reconnected
 
     if (activeInfo.tabId !== session.locked_tab_id) {
         try {
@@ -174,6 +177,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 chrome.tabs.onCreated.addListener(async (tab) => {
     // Synchronous Fast-Path
     if (cachedSession && cachedSession.session_state === StudyLockStates.LOCKED) {
+        if (!cachedSession.locked_tab_id) return; // Tab not yet reconnected
         chrome.tabs.remove(tab.id).catch(() => { });
         chrome.tabs.update(cachedSession.locked_tab_id, { active: true }).catch(() => { });
         chrome.tabs.sendMessage(cachedSession.locked_tab_id, {
@@ -185,6 +189,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 
     const session = await getSession();
     if (session.session_state !== StudyLockStates.LOCKED) return;
+    if (!session.locked_tab_id) return; // Tab not yet reconnected
 
     try {
         await chrome.tabs.remove(tab.id);
@@ -229,14 +234,20 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     }
 });
 
-// Handle locked tab being closed
+// Handle locked tab being closed — keep session alive so timer resumes when user returns
 chrome.tabs.onRemoved.addListener(async (tabId) => {
     const session = await getSession();
     if (session.session_state !== StudyLockStates.LOCKED) return;
     if (tabId !== session.locked_tab_id) return;
 
-    console.warn('Study Lock: Locked tab was closed — interrupting session.');
-    await endSession(StudyLockStates.INTERRUPTED);
+    // Clear tab/window IDs but keep session LOCKED — timer keeps counting down
+    // Content script will reconnect when user navigates back to YouTube
+    console.log('Study Lock: Locked tab closed — session timer continues in background.');
+    await setSession({
+        ...session,
+        locked_tab_id: null,
+        locked_window_id: null,
+    });
 });
 
 // ─────────────────────────────────────────────────────────
@@ -247,6 +258,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
     // Synchronous Fast-Path
     if (cachedSession && cachedSession.session_state === StudyLockStates.LOCKED) {
+        if (!cachedSession.locked_window_id) return; // Window not yet reconnected
         if (windowId === chrome.windows.WINDOW_ID_NONE || windowId !== cachedSession.locked_window_id) {
             chrome.windows.update(cachedSession.locked_window_id, {
                 focused: true,
@@ -258,6 +270,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
     const session = await getSession();
     if (session.session_state !== StudyLockStates.LOCKED) return;
+    if (!session.locked_window_id) return; // Window not yet reconnected
 
     if (windowId === chrome.windows.WINDOW_ID_NONE || windowId !== session.locked_window_id) {
         try {
@@ -327,6 +340,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     break;
                 }
 
+                case 'RECONNECT_SESSION': {
+                    // Content script on YouTube is claiming this tab as the locked session tab
+                    const reconSession = await getSession();
+                    if (reconSession.session_state === StudyLockStates.LOCKED) {
+                        const tabId = sender.tab?.id;
+                        const windowId = sender.tab?.windowId;
+                        if (tabId && windowId) {
+                            await setSession({
+                                ...reconSession,
+                                locked_tab_id: tabId,
+                                locked_window_id: windowId,
+                            });
+                            // Re-create the alarm if it was lost (e.g., browser restart)
+                            const remaining = computeRemainingSeconds(reconSession);
+                            if (remaining > 0) {
+                                chrome.alarms.clear(ALARM_NAME);
+                                chrome.alarms.create(ALARM_NAME, { delayInMinutes: remaining / 60 });
+                            }
+                            // Fullscreen the reconnected window
+                            try {
+                                await chrome.windows.update(windowId, { focused: true, state: 'fullscreen' });
+                            } catch (e) { /* noop */ }
+                            console.log(`Study Lock: Session reconnected to tab ${tabId} (window ${windowId})`);
+                        }
+                    }
+                    sendResponse({ success: true });
+                    break;
+                }
+
                 case 'EXIT_FULLSCREEN': {
                     const exitSession = await getSession();
                     if (exitSession.locked_window_id) {
@@ -354,9 +396,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// Service Worker Install
+// Service Worker Install & Startup Recovery
 // ─────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Study Lock: Extension installed.');
+});
+
+// On browser restart, check if a persisted session has already expired
+chrome.runtime.onStartup.addListener(async () => {
+    const session = await getSession();
+    if (session.session_state !== StudyLockStates.LOCKED) return;
+
+    const remaining = computeRemainingSeconds(session);
+    if (remaining <= 0) {
+        // Timer expired while the browser was closed
+        console.log('Study Lock: Session expired during browser closure — completing.');
+        await setSession(createIdleSession());
+        chrome.alarms.clear(ALARM_NAME);
+    } else {
+        // Session still active — re-create the alarm for the remaining time
+        chrome.alarms.create(ALARM_NAME, { delayInMinutes: remaining / 60 });
+        console.log(`Study Lock: Resumed persisted session — ${Math.round(remaining)}s remaining.`);
+    }
 });

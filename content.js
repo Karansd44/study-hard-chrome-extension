@@ -491,6 +491,8 @@
             if (response && response.session_state === 'LOCKED') {
                 const remaining = response.timer_remaining_seconds;
                 if (remaining > 0) {
+                    // Tell background to update stored tab/window IDs to this tab
+                    await chrome.runtime.sendMessage({ action: 'RECONNECT_SESSION' });
                     activateLock(
                         response.timer_duration_seconds,
                         response.session_start_timestamp
