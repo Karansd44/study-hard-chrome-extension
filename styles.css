@@ -102,6 +102,21 @@
     opacity: 0.8;
 }
 
+.study-lock-timer-mode {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: rgba(249, 250, 251, 0.72);
+}
+
+.study-lock-timer-aux {
+    min-height: 16px;
+    font-size: 11px;
+    color: rgba(249, 250, 251, 0.78);
+    text-align: center;
+}
+
 /* Progress bar */
 .study-lock-timer-progress {
     width: 100%;
@@ -328,6 +343,11 @@ body.study-lock-active #full-bleed-container {
 body.study-lock-hidden-blur {
     filter: blur(20px) grayscale(100%) !important;
     transition: filter 0.3s ease;
+}
+
+.study-lock-control-disabled {
+    opacity: 0.45 !important;
+    filter: grayscale(100%);
 }
 
 /* ──────────────── Session Complete Toast ──────────────── */

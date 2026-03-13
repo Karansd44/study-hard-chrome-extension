@@ -13,6 +13,16 @@ const StudyLockStates = Object.freeze({
     INTERRUPTED: 'INTERRUPTED',
 });
 
+const FocusModes = Object.freeze({
+    UNINTERRUPTED_FLOW: 'UNINTERRUPTED_FLOW',
+    FLEXIBLE_FOCUS: 'FLEXIBLE_FOCUS',
+    SCHEDULED_BREAK: 'SCHEDULED_BREAK',
+});
+
+const FLEXIBLE_AUTO_RESUME_SECONDS = 5 * 60;
+const SCHEDULED_BREAK_DURATION_SECONDS = 5 * 60;
+const SCHEDULED_BREAK_INTERVAL_SECONDS = 15 * 60;
+
 const VALID_TRANSITIONS = Object.freeze({
     [StudyLockStates.IDLE]: [StudyLockStates.SETUP],
     [StudyLockStates.SETUP]: [StudyLockStates.LOCKED, StudyLockStates.IDLE],
@@ -45,15 +55,49 @@ function isValidTransition(from, to) {
  * @param {object} params
  * @returns {object}
  */
-function createSessionData({ tabId, windowId, duration, url }) {
+function createSessionData({ tabId, windowId, duration, url, mode }) {
+    const now = Date.now();
+    const selectedMode = Object.values(FocusModes).includes(mode)
+        ? mode
+        : FocusModes.UNINTERRUPTED_FLOW;
+
     return {
         session_state: StudyLockStates.LOCKED,
         locked_tab_id: tabId,
         locked_window_id: windowId,
         timer_duration_seconds: duration,
-        session_start_timestamp: Date.now(),
+        session_start_timestamp: now,
+        timer_running_since_timestamp: now,
+        timer_elapsed_seconds: 0,
+        timer_is_running: true,
+        flexible_pause_started_at: null,
+        flexible_auto_resume_at: null,
+        focus_mode: selectedMode,
+        break_schedule: [],
+        scheduled_break_active: false,
+        scheduled_break_ends_at: null,
+        scheduled_next_break_elapsed_seconds: selectedMode === FocusModes.SCHEDULED_BREAK
+            ? SCHEDULED_BREAK_INTERVAL_SECONDS
+            : null,
         original_url: url,
     };
+}
+
+/**
+ * Computes elapsed timer seconds based on running/paused state.
+ * @param {object} session
+ * @returns {number}
+ */
+function computeElapsedSeconds(session) {
+    if (!session) return 0;
+    const baseElapsed = Number(session.timer_elapsed_seconds) || 0;
+
+    if (!session.timer_is_running || !session.timer_running_since_timestamp) {
+        return Math.max(0, baseElapsed);
+    }
+
+    const liveElapsed = (Date.now() - session.timer_running_since_timestamp) / 1000;
+    return Math.max(0, baseElapsed + liveElapsed);
 }
 
 /**
@@ -62,8 +106,8 @@ function createSessionData({ tabId, windowId, duration, url }) {
  * @returns {number} remaining seconds (clamped to 0)
  */
 function computeRemainingSeconds(session) {
-    if (!session || !session.session_start_timestamp) return 0;
-    const elapsed = (Date.now() - session.session_start_timestamp) / 1000;
+    if (!session || !session.timer_duration_seconds) return 0;
+    const elapsed = computeElapsedSeconds(session);
     return Math.max(0, session.timer_duration_seconds - elapsed);
 }
 
@@ -78,6 +122,16 @@ function createIdleSession() {
         locked_window_id: null,
         timer_duration_seconds: 0,
         session_start_timestamp: null,
+        timer_running_since_timestamp: null,
+        timer_elapsed_seconds: 0,
+        timer_is_running: false,
+        flexible_pause_started_at: null,
+        flexible_auto_resume_at: null,
+        focus_mode: FocusModes.UNINTERRUPTED_FLOW,
+        break_schedule: [],
+        scheduled_break_active: false,
+        scheduled_break_ends_at: null,
+        scheduled_next_break_elapsed_seconds: null,
         original_url: null,
     };
 }
@@ -86,12 +140,17 @@ function createIdleSession() {
 // In content script context, these are just global variables since content_scripts injection makes them available.
 if (typeof self !== 'undefined' && typeof self.StudyLockStates === 'undefined') {
     self.StudyLockStates = StudyLockStates;
+    self.FocusModes = FocusModes;
+    self.FLEXIBLE_AUTO_RESUME_SECONDS = FLEXIBLE_AUTO_RESUME_SECONDS;
+    self.SCHEDULED_BREAK_DURATION_SECONDS = SCHEDULED_BREAK_DURATION_SECONDS;
+    self.SCHEDULED_BREAK_INTERVAL_SECONDS = SCHEDULED_BREAK_INTERVAL_SECONDS;
     self.VALID_TRANSITIONS = VALID_TRANSITIONS;
     self.SESSION_STORAGE_KEY = SESSION_STORAGE_KEY;
     self.TIMER_CONSTRAINTS = TIMER_CONSTRAINTS;
     self.ALARM_NAME = ALARM_NAME;
     self.isValidTransition = isValidTransition;
     self.createSessionData = createSessionData;
+    self.computeElapsedSeconds = computeElapsedSeconds;
     self.computeRemainingSeconds = computeRemainingSeconds;
     self.createIdleSession = createIdleSession;
 }

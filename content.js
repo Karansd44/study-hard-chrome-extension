@@ -45,6 +45,27 @@
     let sessionStartTimestamp = null;
     let sessionDuration = null;
 
+    let currentMode = FocusModes.UNINTERRUPTED_FLOW;
+    let breakSchedule = [];
+    let flexibleAutoResumeSeconds = FLEXIBLE_AUTO_RESUME_SECONDS;
+    let flexibleAutoResumeAt = null;
+    let scheduledBreakActive = false;
+    let scheduledBreakEndsAt = null;
+    let scheduledNextBreakElapsedSeconds = null;
+    let scheduledBreakLastCheckAt = 0;
+
+    let timerElapsedAtSync = 0;
+    let timerSyncedAt = 0;
+    let timerIsRunning = true;
+
+    let suppressPauseHandler = false;
+    let pauseGraceTimeout = null;
+
+    let playerPauseButton = null;
+    let videoPauseHandler = null;
+    let videoPlayHandler = null;
+    let playButtonClickHandler = null;
+
     // ─────────────────────────────────────────────────────────
     // DOM Helpers
     // ─────────────────────────────────────────────────────────
@@ -68,6 +89,53 @@
         const mins = Math.floor(totalSeconds / 60);
         const secs = Math.floor(totalSeconds % 60);
         return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function getModeLabel(mode) {
+        switch (mode) {
+            case FocusModes.FLEXIBLE_FOCUS:
+                return 'Flexible Focus';
+            case FocusModes.SCHEDULED_BREAK:
+                return 'Scheduled Break';
+            default:
+                return 'Uninterrupted';
+        }
+    }
+
+    function getElapsedSeconds() {
+        if (!timerIsRunning) return Math.max(0, timerElapsedAtSync);
+        return Math.max(0, timerElapsedAtSync + ((Date.now() - timerSyncedAt) / 1000));
+    }
+
+    function getRemainingSeconds() {
+        return Math.max(0, (sessionDuration || 0) - getElapsedSeconds());
+    }
+
+    function shouldAllowPause() {
+        if (!isLocked) return true;
+        if (currentMode === FocusModes.FLEXIBLE_FOCUS) return true;
+        if (currentMode === FocusModes.SCHEDULED_BREAK) return scheduledBreakActive;
+        return false;
+    }
+
+    function clearPauseGraceTimer() {
+        if (pauseGraceTimeout) {
+            clearTimeout(pauseGraceTimeout);
+            pauseGraceTimeout = null;
+        }
+    }
+
+    function updatePauseAffordances() {
+        if (!playerPauseButton) return;
+
+        const pauseAllowed = shouldAllowPause();
+        playerPauseButton.classList.toggle('study-lock-control-disabled', !pauseAllowed);
+        playerPauseButton.setAttribute('aria-disabled', String(!pauseAllowed));
+        playerPauseButton.title = pauseAllowed
+            ? ''
+            : currentMode === FocusModes.SCHEDULED_BREAK
+                ? 'Pause available during scheduled breaks only.'
+                : 'Pause unavailable in this focus mode.';
     }
 
     // ─────────────────────────────────────────────────────────
@@ -98,6 +166,14 @@
         timeDisplay.className = 'study-lock-timer-time';
         timeDisplay.textContent = formatTime(duration);
 
+        const modeDisplay = document.createElement('span');
+        modeDisplay.className = 'study-lock-timer-mode';
+        modeDisplay.textContent = getModeLabel(currentMode);
+
+        const auxDisplay = document.createElement('span');
+        auxDisplay.className = 'study-lock-timer-aux';
+        auxDisplay.id = 'study-lock-timer-aux';
+
         const progressBar = document.createElement('div');
         progressBar.className = 'study-lock-timer-progress';
         const progressFill = document.createElement('div');
@@ -106,6 +182,8 @@
 
         overlay.appendChild(lockIcon);
         overlay.appendChild(timeDisplay);
+        overlay.appendChild(modeDisplay);
+        overlay.appendChild(auxDisplay);
         overlay.appendChild(progressBar);
         container.appendChild(overlay);
 
@@ -159,9 +237,13 @@
         return { timeDisplay, progressFill };
     }
 
-    function startTimerOverlay(duration, startTimestamp) {
+    function startTimerOverlay(duration, startTimestamp, options = {}) {
         sessionDuration = duration;
         sessionStartTimestamp = startTimestamp;
+        timerElapsedAtSync = Number(options.timerElapsedSeconds) || 0;
+        timerSyncedAt = Date.now();
+        timerIsRunning = options.timerIsRunning !== false;
+        flexibleAutoResumeAt = options.flexibleAutoResumeAt || null;
 
         const { timeDisplay, progressFill } = createTimerOverlay(duration, startTimestamp);
 
@@ -169,12 +251,32 @@
         if (timerInterval) clearInterval(timerInterval);
 
         timerInterval = setInterval(() => {
-            const elapsed = (Date.now() - sessionStartTimestamp) / 1000;
-            const remaining = Math.max(0, sessionDuration - elapsed);
-            const progress = ((sessionDuration - remaining) / sessionDuration) * 100;
+            const remaining = getRemainingSeconds();
+            const elapsed = Math.max(0, sessionDuration - remaining);
+            const progress = (elapsed / sessionDuration) * 100;
 
             timeDisplay.textContent = formatTime(remaining);
             progressFill.style.width = `${progress}%`;
+
+            const aux = document.getElementById('study-lock-timer-aux');
+            if (aux) {
+                if (currentMode === FocusModes.FLEXIBLE_FOCUS && !timerIsRunning) {
+                    const msLeft = Math.max(0, (Number(flexibleAutoResumeAt) || 0) - Date.now());
+                    aux.textContent = `Auto-resume in ${formatTime(msLeft / 1000)}`;
+                } else if (currentMode === FocusModes.SCHEDULED_BREAK) {
+                    if (scheduledBreakActive && scheduledBreakEndsAt) {
+                        const breakLeft = Math.max(0, (scheduledBreakEndsAt - Date.now()) / 1000);
+                        aux.textContent = `Break time ${formatTime(breakLeft)} left`;
+                    } else if (Number.isFinite(Number(scheduledNextBreakElapsedSeconds))) {
+                        const untilBreak = Math.max(0, Number(scheduledNextBreakElapsedSeconds) - getElapsedSeconds());
+                        aux.textContent = `Next break in ${formatTime(untilBreak)}`;
+                    } else {
+                        aux.textContent = 'Pause locked until session end';
+                    }
+                } else {
+                    aux.textContent = '';
+                }
+            }
 
             // Add urgency class in last 60 seconds
             const overlay = document.getElementById(OVERLAY_ID);
@@ -191,7 +293,7 @@
                 clearInterval(timerInterval);
                 timerInterval = null;
             }
-        }, 250); // Update 4x/sec for smooth display
+        }, 250);
     }
 
     function stopTimerOverlay() {
@@ -287,6 +389,22 @@
             return false;
         }
 
+        // Block pause shortcuts when pause is disallowed for the current mode
+        const lowerKey = String(e.key || '').toLowerCase();
+        const pauseShortcutPressed = lowerKey === ' ' || lowerKey === 'spacebar' || lowerKey === 'k';
+        if (pauseShortcutPressed && !shouldAllowPause()) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            showWarning('🔒 Pause is not available right now.');
+            return false;
+        }
+
+        // During scheduled breaks users can switch tabs/windows.
+        if (currentMode === FocusModes.SCHEDULED_BREAK && scheduledBreakActive) {
+            return;
+        }
+
         // Block Ctrl/Cmd/Alt-based shortcuts
         if (e.ctrlKey || e.metaKey || e.altKey) {
             const blockedKeys = [
@@ -361,17 +479,126 @@
 
     let playbackInterval = null;
 
+    async function syncFlexiblePauseState(paused) {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'SET_FLEXIBLE_PAUSE_STATE',
+                paused,
+            });
+            if (!response || !response.success) return;
+            timerIsRunning = Boolean(response.timer_is_running);
+            timerElapsedAtSync = (sessionDuration || 0) - Number(response.timer_remaining_seconds || 0);
+            timerSyncedAt = Date.now();
+            flexibleAutoResumeAt = response.flexible_auto_resume_at || null;
+        } catch (e) {
+            // Ignore sync failures; local enforcement still runs.
+        }
+    }
+
+    async function maybeStartScheduledBreak() {
+        if (!isLocked || currentMode !== FocusModes.SCHEDULED_BREAK) return;
+        if (scheduledBreakActive || !timerIsRunning) return;
+        if (!Number.isFinite(Number(scheduledNextBreakElapsedSeconds))) return;
+        if (Date.now() - scheduledBreakLastCheckAt < 1000) return;
+
+        const elapsed = getElapsedSeconds();
+        if (elapsed < Number(scheduledNextBreakElapsedSeconds)) return;
+
+        scheduledBreakLastCheckAt = Date.now();
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'REQUEST_SCHEDULED_BREAK' });
+            if (!response || !response.success) return;
+            if (!response.started) return;
+
+            timerElapsedAtSync = getElapsedSeconds();
+            timerIsRunning = false;
+            timerSyncedAt = Date.now();
+            scheduledBreakActive = true;
+            scheduledBreakEndsAt = response.scheduled_break_ends_at || null;
+
+            showWarning('☕ Break started. Pause and tab switching are allowed for 5 minutes.');
+        } catch (e) {
+            // Ignore transient messaging issues.
+        }
+    }
+
+    function forceVideoPlay(video) {
+        if (!video) return;
+        suppressPauseHandler = true;
+        video.play().catch(() => { }).finally(() => {
+            setTimeout(() => {
+                suppressPauseHandler = false;
+            }, 0);
+        });
+    }
+
+    function scheduleFlexibleAutoResume(video, autoResumeAt = null) {
+        clearPauseGraceTimer();
+        flexibleAutoResumeAt = autoResumeAt || (Date.now() + (flexibleAutoResumeSeconds * 1000));
+        const delayMs = Math.max(0, flexibleAutoResumeAt - Date.now());
+
+        pauseGraceTimeout = setTimeout(() => {
+            if (!isLocked || currentMode !== FocusModes.FLEXIBLE_FOCUS) return;
+            if (!video.paused) return;
+
+            forceVideoPlay(video);
+            timerIsRunning = true;
+            timerSyncedAt = Date.now();
+            flexibleAutoResumeAt = null;
+            syncFlexiblePauseState(false);
+            updatePauseAffordances();
+            showWarning('⏱ Pause limit reached. Session resumed.');
+        }, delayMs);
+    }
+
     function enforcePlayback() {
         if (!isLocked) return;
         const video = document.querySelector('video');
-        if (video && video.paused) {
-            video.play().catch(() => { });
-            showWarning('🔒 Video pausing is disabled during your session!');
+        if (!video) return;
+
+        updatePauseAffordances();
+
+        if (currentMode === FocusModes.UNINTERRUPTED_FLOW && video.paused) {
+            forceVideoPlay(video);
+            showWarning('🔒 Pause is unavailable in Uninterrupted Flow.');
+            return;
+        }
+
+        if (currentMode === FocusModes.FLEXIBLE_FOCUS && timerIsRunning && video.paused) {
+            forceVideoPlay(video);
+            showWarning('⏱ Focus timer resumed playback.');
+            return;
+        }
+
+        if (currentMode === FocusModes.SCHEDULED_BREAK && !scheduledBreakActive && timerIsRunning) {
+            maybeStartScheduledBreak();
+        }
+
+        if (currentMode === FocusModes.SCHEDULED_BREAK && scheduledBreakActive && scheduledBreakEndsAt && Date.now() >= scheduledBreakEndsAt) {
+            scheduledBreakActive = false;
+            scheduledBreakEndsAt = null;
+            if (Number.isFinite(Number(scheduledNextBreakElapsedSeconds))) {
+                const nextBreak = Number(scheduledNextBreakElapsedSeconds) + SCHEDULED_BREAK_INTERVAL_SECONDS;
+                scheduledNextBreakElapsedSeconds = nextBreak < sessionDuration ? nextBreak : null;
+            }
+            timerIsRunning = true;
+            timerSyncedAt = Date.now();
+            showWarning('⏱ Break ended. Focus timer resumed.');
+        }
+
+        if (currentMode === FocusModes.SCHEDULED_BREAK && video.paused && !scheduledBreakActive) {
+            forceVideoPlay(video);
+            showWarning('🔒 Pause allowed only during scheduled breaks.');
+            return;
         }
     }
 
     function handleVisibilityChange() {
         if (!isLocked) return;
+        if (currentMode === FocusModes.SCHEDULED_BREAK && scheduledBreakActive) {
+            document.body.classList.remove('study-lock-hidden-blur');
+            return;
+        }
         if (document.hidden) {
             document.body.classList.add('study-lock-hidden-blur');
             // Aggressively tell the background script to pull focus back to this tab
@@ -381,15 +608,116 @@
         }
     }
 
+    function handleVideoPaused() {
+        if (!isLocked || suppressPauseHandler) return;
+        const video = document.querySelector('video');
+        if (!video) return;
+
+        if (!shouldAllowPause()) {
+            forceVideoPlay(video);
+            showWarning(
+                currentMode === FocusModes.SCHEDULED_BREAK
+                    ? '🔒 Pause allowed only during scheduled breaks.'
+                    : '🔒 Pause is disabled until timer ends.'
+            );
+            return;
+        }
+
+        if (currentMode === FocusModes.FLEXIBLE_FOCUS) {
+            timerElapsedAtSync = getElapsedSeconds();
+            timerIsRunning = false;
+            timerSyncedAt = Date.now();
+            scheduleFlexibleAutoResume(video);
+            syncFlexiblePauseState(true);
+            updatePauseAffordances();
+        }
+    }
+
+    function handleVideoPlayed() {
+        if (!isLocked) return;
+
+        if (currentMode === FocusModes.FLEXIBLE_FOCUS) {
+            clearPauseGraceTimer();
+            flexibleAutoResumeAt = null;
+            timerElapsedAtSync = getElapsedSeconds();
+            timerIsRunning = true;
+            timerSyncedAt = Date.now();
+            syncFlexiblePauseState(false);
+            updatePauseAffordances();
+        }
+    }
+
+    function attachVideoGuards() {
+        const video = document.querySelector('video');
+        if (!video) return;
+
+        videoPauseHandler = () => handleVideoPaused();
+        videoPlayHandler = () => handleVideoPlayed();
+        video.addEventListener('pause', videoPauseHandler, true);
+        video.addEventListener('play', videoPlayHandler, true);
+
+        playerPauseButton = document.querySelector('.ytp-play-button');
+        updatePauseAffordances();
+
+        playButtonClickHandler = (event) => {
+            if (!isLocked || shouldAllowPause()) return;
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            if (!target.closest('.ytp-play-button')) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            showWarning('🔒 Pause is disabled in this mode.');
+        };
+        document.addEventListener('click', playButtonClickHandler, true);
+
+        if (currentMode === FocusModes.FLEXIBLE_FOCUS && !timerIsRunning && video.paused) {
+            scheduleFlexibleAutoResume(video, flexibleAutoResumeAt);
+        }
+    }
+
+    function detachVideoGuards() {
+        const video = document.querySelector('video');
+        if (video && videoPauseHandler) {
+            video.removeEventListener('pause', videoPauseHandler, true);
+        }
+        if (video && videoPlayHandler) {
+            video.removeEventListener('play', videoPlayHandler, true);
+        }
+        videoPauseHandler = null;
+        videoPlayHandler = null;
+
+        if (playButtonClickHandler) {
+            document.removeEventListener('click', playButtonClickHandler, true);
+            playButtonClickHandler = null;
+        }
+
+        if (playerPauseButton) {
+            playerPauseButton.classList.remove('study-lock-control-disabled');
+            playerPauseButton.removeAttribute('aria-disabled');
+            playerPauseButton.removeAttribute('title');
+            playerPauseButton = null;
+        }
+    }
+
     // ─────────────────────────────────────────────────────────
     // Session Lifecycle
     // ─────────────────────────────────────────────────────────
 
-    function activateLock(duration, startTimestamp) {
+    function activateLock(duration, startTimestamp, options = {}) {
         isLocked = true;
+        currentMode = options.mode || FocusModes.UNINTERRUPTED_FLOW;
+        breakSchedule = Array.isArray(options.breakSchedule) ? options.breakSchedule : [];
+        flexibleAutoResumeSeconds = Number(options.flexibleAutoResumeSeconds) || FLEXIBLE_AUTO_RESUME_SECONDS;
+        scheduledBreakActive = Boolean(options.scheduledBreakActive);
+        scheduledBreakEndsAt = options.scheduledBreakEndsAt || null;
+        scheduledNextBreakElapsedSeconds = Number.isFinite(Number(options.scheduledNextBreakElapsedSeconds))
+            ? Number(options.scheduledNextBreakElapsedSeconds)
+            : null;
 
         // Start timer overlay
-        startTimerOverlay(duration, startTimestamp);
+        startTimerOverlay(duration, startTimestamp, options);
 
         // Attach keyboard blocker
         document.addEventListener('keydown', blockKeyboard, true);
@@ -397,8 +725,11 @@
         // Attach visibility listener
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        // Start playback enforcer interval (runs every 1 second)
-        playbackInterval = setInterval(enforcePlayback, 1000);
+        attachVideoGuards();
+        updatePauseAffordances();
+
+        // Start playback enforcer interval (runs every 0.5 second)
+        playbackInterval = setInterval(enforcePlayback, 500);
 
         // Request fullscreen via background (window-level, no user gesture needed)
         requestFullscreenViaBackground();
@@ -409,7 +740,12 @@
 
     function cleanup() {
         isLocked = false;
+        scheduledBreakActive = false;
+        scheduledBreakEndsAt = null;
+        scheduledNextBreakElapsedSeconds = null;
+        scheduledBreakLastCheckAt = 0;
 
+        clearPauseGraceTimer();
         stopTimerOverlay();
         removeElement(WARNING_ID);
 
@@ -417,6 +753,8 @@
             clearInterval(playbackInterval);
             playbackInterval = null;
         }
+
+        detachVideoGuards();
 
         document.removeEventListener('keydown', blockKeyboard, true);
         document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -435,7 +773,17 @@
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         switch (message.action) {
             case 'ACTIVATE_LOCK':
-                activateLock(message.duration, message.startTimestamp);
+                activateLock(message.duration, message.startTimestamp, {
+                    mode: message.mode,
+                    breakSchedule: message.breakSchedule,
+                    flexibleAutoResumeSeconds: message.flexibleAutoResumeSeconds,
+                    timerIsRunning: message.timerIsRunning,
+                    timerElapsedSeconds: message.timerElapsedSeconds,
+                    flexibleAutoResumeAt: message.flexibleAutoResumeAt,
+                    scheduledBreakActive: message.scheduledBreakActive,
+                    scheduledBreakEndsAt: message.scheduledBreakEndsAt,
+                    scheduledNextBreakElapsedSeconds: message.scheduledNextBreakElapsedSeconds,
+                });
                 sendResponse({ success: true });
                 break;
 
@@ -495,7 +843,18 @@
                     await chrome.runtime.sendMessage({ action: 'RECONNECT_SESSION' });
                     activateLock(
                         response.timer_duration_seconds,
-                        response.session_start_timestamp
+                        response.session_start_timestamp,
+                        {
+                            mode: response.focus_mode,
+                            breakSchedule: response.break_schedule,
+                            flexibleAutoResumeSeconds: FLEXIBLE_AUTO_RESUME_SECONDS,
+                            timerIsRunning: response.timer_is_running,
+                            timerElapsedSeconds: response.timer_elapsed_seconds_live,
+                            flexibleAutoResumeAt: response.flexible_auto_resume_at,
+                            scheduledBreakActive: response.scheduled_break_active,
+                            scheduledBreakEndsAt: response.scheduled_break_ends_at,
+                            scheduledNextBreakElapsedSeconds: response.scheduled_next_break_elapsed_seconds,
+                        }
                     );
                 }
             }

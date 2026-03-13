@@ -16,9 +16,12 @@
     const startBtn = document.getElementById('start-btn');
     const customInput = document.getElementById('custom-minutes');
     const statusTime = document.getElementById('popup-status-time');
+    const statusMode = document.getElementById('popup-status-mode');
     const presetButtons = document.querySelectorAll('.popup-preset');
+    const modeButtons = document.querySelectorAll('.popup-mode');
 
     let selectedMinutes = null;
+    let selectedMode = 'UNINTERRUPTED_FLOW';
     let currentTab = null;
     let statusInterval = null;
 
@@ -50,6 +53,24 @@
         section.style.display = 'flex';
     }
 
+    function formatModeLabel(mode) {
+        switch (mode) {
+            case 'FLEXIBLE_FOCUS':
+                return 'Flexible Focus';
+            case 'SCHEDULED_BREAK':
+                return 'Scheduled Break';
+            default:
+                return 'Uninterrupted Flow';
+        }
+    }
+
+    function setSelectedMode(mode) {
+        selectedMode = mode;
+        modeButtons.forEach((btn) => {
+            btn.classList.toggle('popup-mode--active', btn.dataset.mode === mode);
+        });
+    }
+
     function setSelectedMinutes(mins) {
         selectedMinutes = mins;
 
@@ -73,6 +94,12 @@
     }
 
     // ─── Event Handlers ───
+
+    modeButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            setSelectedMode(btn.dataset.mode || 'UNINTERRUPTED_FLOW');
+        });
+    });
 
     // Preset buttons
     presetButtons.forEach((btn) => {
@@ -109,6 +136,7 @@
                 tabId: currentTab.id,
                 windowId: currentTab.windowId,
                 duration: selectedMinutes * 60, // Convert to seconds
+                mode: selectedMode,
                 url: currentTab.url,
             });
 
@@ -137,6 +165,7 @@
             const session = await chrome.runtime.sendMessage({ action: 'GET_SESSION' });
             if (session && session.session_state === 'LOCKED') {
                 statusTime.textContent = formatTime(session.timer_remaining_seconds);
+                statusMode.textContent = formatModeLabel(session.focus_mode);
             } else {
                 // Session ended — refresh the popup view
                 clearInterval(statusInterval);
@@ -153,6 +182,7 @@
             const session = await chrome.runtime.sendMessage({ action: 'GET_SESSION' });
 
             if (session && session.session_state === 'LOCKED' && session.timer_remaining_seconds > 0) {
+                statusMode.textContent = formatModeLabel(session.focus_mode);
                 showSection(statusSection);
                 startStatusPolling();
                 return;
@@ -169,6 +199,7 @@
 
             // We're on a YouTube video — show the setup UI
             currentTab = tab;
+            setSelectedMode('UNINTERRUPTED_FLOW');
             showSection(setupSection);
 
         } catch (err) {

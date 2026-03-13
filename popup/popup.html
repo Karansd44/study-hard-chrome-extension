@@ -23,7 +23,7 @@
     <div class="popup-status" id="popup-status" style="display: none;">
       <div class="popup-status-badge">SESSION ACTIVE</div>
       <div class="popup-status-time" id="popup-status-time">--:--</div>
-      <p class="popup-status-label">remaining</p>
+      <p class="popup-status-label" id="popup-status-mode">Uninterrupted Flow</p>
     </div>
 
     <!-- Error State -->
@@ -34,6 +34,13 @@
 
     <!-- Timer Setup (shown when on a YouTube video & no session active) -->
     <div class="popup-setup" id="popup-setup" style="display: none;">
+      <!-- Focus Mode -->
+      <div class="popup-modes" role="radiogroup" aria-label="Focus mode">
+        <button class="popup-mode popup-mode--active" type="button" data-mode="UNINTERRUPTED_FLOW">Uninterrupted</button>
+        <button class="popup-mode" type="button" data-mode="FLEXIBLE_FOCUS">Flexible</button>
+        <button class="popup-mode" type="button" data-mode="SCHEDULED_BREAK">Scheduled Breaks</button>
+      </div>
+
       <!-- Quick Presets -->
       <div class="popup-presets">
         <button class="popup-preset" data-minutes="15">15 min</button>
@@ -59,7 +66,7 @@
 
       <!-- Warning -->
       <p class="popup-warning">
-        ⚠️ You won't be able to exit until the timer expires.
+        ⚠️ Playback rules change by mode and remain enforced until the session ends.
       </p>
     </div>
   </div>
